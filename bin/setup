@@ -1,0 +1,74 @@
+#!/bin/bash
+
+set -o errexit
+
+bin/stop
+
+docker-compose -f docker-compose.yml up -d
+[ $? != 0 ] && echo "Failed start services" && exit
+
+bin/phptty chmod u+x bin/magento
+
+echo "Waiting for connection to Elasticsearch..."
+bin/phptty timeout 100 bash -c "
+    until curl --silent --output /dev/null http://elasticsearch:9200/_cat/health?h=st; do
+        printf '.'
+        sleep 2
+    done"
+[ $? != 0 ] && echo "Failed connect Elasticsearch" && exit
+
+echo "Waiting connection RabbitMQ..."
+rabbitmqi=4
+until [ $rabbitmqi -le 0 ]; do
+    printf '.'
+    (( rabbitmqi-- ))
+    sleep 2
+done
+
+bin/phptty bin/magento setup:install \
+  --db-host="mariadb" \
+  --db-name="magento" \
+  --db-user="magento" \
+  --db-password="magento" \
+  --base-url="https://magento.test/" \
+  --base-url-secure="https://magento.test/" \
+  --backend-frontname="admin" \
+  --admin-firstname="admin" \
+  --admin-lastname="admin" \
+  --admin-email="admin@admin.com" \
+  --admin-user="admin" \
+  --admin-password="admin123" \
+  --language="zh_Hant_TW" \
+  --currency="TWD" \
+  --timezone="Asia/Taipei" \
+  --amqp-host=rabbitmq \
+  --amqp-port=5672 \
+  --amqp-user=guest \
+  --amqp-password=guest \
+  --amqp-virtualhost=/ \
+  --cache-backend=redis \
+  --cache-backend-redis-server=redis \
+  --cache-backend-redis-db=0 \
+  --page-cache=redis \
+  --page-cache-redis-server=redis \
+  --page-cache-redis-db=1 \
+  --session-save=redis \
+  --session-save-redis-host=redis \
+  --session-save-redis-log-level=4 \
+  --session-save-redis-db=2 \
+  --search-engine=elasticsearch7 \
+  --elasticsearch-host="elasticsearch" \
+  --elasticsearch-port="9200" \
+  --use-rewrites=1
+
+bin/copyfromcontainer
+
+bin/phptty bin/magento setup:static-content:deploy -f
+
+bin/phptty bin/magento indexer:reindex
+
+bin/phptty bin/magento cache:flush
+
+bin/phptty bin/magento cron:install
+
+bin/phptty bin/magento deploy:mode:set developer

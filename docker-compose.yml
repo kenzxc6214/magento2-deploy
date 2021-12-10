@@ -1,0 +1,88 @@
+
+## docker network inspect bridge
+## default 172.17.0.1
+## If you changed the default docker network you may need to replace
+
+version: "3"
+
+services:
+  nginx:
+    build: 
+      context: ./image/nginx
+    ports:
+      - "80:8000"
+      - "443:8443"
+    volumes: &workspace
+      - "sock_data:/sock"
+      - "workspace_data:/var/www/html"
+    # M1 Mac fix delay on docker
+    extra_hosts: &extrahost
+      - "nginx:172.17.0.1"
+      - "php-fpm:172.17.0.1"
+      - "mariadb:172.17.0.1"
+      - "redis:172.17.0.1"
+      - "rabbitmq:172.17.0.1"
+
+  php-fpm:
+    build: 
+      context: ./image/php/7.4
+    volumes: *workspace
+    extra_hosts: *extrahost
+  
+  mariadb:
+    image: mariadb:10.4
+    # 修改資料插入上限
+    command: --max_allowed_packet=64M
+    ports:
+      - "3306:3306"
+    environment:
+      - TZ=Asia/Taipei
+      - MYSQL_ROOT_PASSWORD=magento
+      - MYSQL_DATABASE=magento
+      - MYSQL_USER=magento
+      - MYSQL_PASSWORD=magento
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    extra_hosts: *extrahost
+
+  elasticsearch:
+    build:
+      context: ./image/elasticsearch
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      - "discovery.type=single-node"
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - "cluster.routing.allocation.disk.threshold_enabled=false"
+      - "index.blocks.read_only_allow_delete"
+    extra_hosts: *extrahost
+
+  redis:
+    image: redis:5.0-alpine
+    ports:
+      - "6379:6379"
+    extra_hosts: *extrahost
+
+  rabbitmq:
+    image: rabbitmq:3.8.22-management-alpine
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_VM_MEMORY_HIGH_WATERMARK=1GB
+    extra_hosts: *extrahost
+
+  mailcatcher:
+    image: schickling/mailcatcher
+    ports:
+      - "1080:1080"
+    extra_hosts: *extrahost
+
+volumes:
+  workspace_data:
+  sock_data:
+  mariadb_data:
+  rabbitmq_data:

@@ -1,0 +1,24 @@
+#!/bin/bash
+[ -z "$1" ] && echo "Please specify a directory or file to copy to container (ex. vendor, --all)" && exit
+
+REAL_SRC=$(cd -P "workspace" && pwd)
+
+if [ "$1" == "--all" ]; then
+  docker cp "$REAL_SRC/./" "$(docker-compose ps -q php-fpm|awk '{print $1}')":/var/www/html/
+  echo "Completed copying all files from host to container"
+else
+  if [ -f "$REAL_SRC/$1" ]; then
+    docker cp "$REAL_SRC/${1}" "$(docker-compose ps -q php-fpm|awk '{print $1}')":/var/www/html/"$1"
+  else
+    docker cp "$REAL_SRC/${1}" "$(docker-compose ps -q php-fpm|awk '{print $1}')":/var/www/html/"$(dirname "$1")"
+  fi
+  echo "Completed copying $1 from host to container"
+fi
+
+# change folder and files chown
+bin/rootnotty chown -R app:app /var/www/
+bin/phpclitty find var vendor pub/static pub/media app/etc \( -type f -or -type d \) -exec chmod u+w {} +;
+bin/phpclitty chmod u+x bin/magento
+
+# cache clean
+bin/phpclitty bin/magento cache:clean
